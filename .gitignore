@@ -111,3 +111,11 @@ dist
 
 # TernJS port file
 .tern-port
+
+# Nix build results
+result
+result-*
+
+# Generated frontend bundle output
+apps/web/public/assets/
+

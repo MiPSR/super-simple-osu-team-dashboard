@@ -1,0 +1,11 @@
+{
+  "name": "@osu-team/database",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@osu-team/contracts": "workspace:*"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@osu-team/web",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@osu-team/config": "workspace:*",
+    "@osu-team/contracts": "workspace:*",
+    "@osu-team/database": "workspace:*",
+    "elysia": "^1.4.0"
+  },
+  "scripts": {
+    "start": "bun run src/main.ts"
+  }
+}

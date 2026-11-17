@@ -1,0 +1,23 @@
+{
+  "name": "super-simple-osu-team-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run scripts/dev.ts",
+    "build": "bun run --filter '@osu-team/frontend' build",
+    "start": "bun run scripts/start.ts",
+    "start:web": "bun run --filter '@osu-team/web' start",
+    "start:collector": "bun run --filter '@osu-team/collector' start",
+    "test": "bun test ./apps ./packages ./scripts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}

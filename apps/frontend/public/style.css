@@ -1,0 +1,199 @@
+/* Design tokens (7.5) — compact shared set. Spacing steps 4/8/12/16/24/32. */
+:root {
+  color-scheme: light dark;
+
+  --bg: oklch(0.98 0.004 260);
+  --fg: oklch(0.22 0.02 260);
+  --muted: oklch(0.5 0.015 260);
+  --separator: oklch(0.88 0.01 260);
+  --focus: oklch(0.6 0.14 250);
+  --positive: oklch(0.55 0.13 150);
+  --negative: oklch(0.55 0.16 25);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.18 0.015 260);
+    --fg: oklch(0.93 0.008 260);
+    --muted: oklch(0.65 0.015 260);
+    --separator: oklch(0.32 0.02 260);
+    --focus: oklch(0.75 0.13 250);
+    --positive: oklch(0.75 0.14 150);
+    --negative: oklch(0.7 0.16 25);
+  }
+}
+
+/* System theme handled entirely in initial CSS — no theme selector, no flash (7.6). */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 system-ui, "Segoe UI", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a { color: inherit; }
+
+/* Header: three aligned areas (7.2). */
+.site-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.brand-logo { width: 28px; height: 28px; object-fit: contain; }
+
+.site-header nav { display: flex; gap: var(--space-4); }
+.site-header > nav[aria-label="Pages"] { justify-content: center; }
+.mode-selector { justify-content: end; }
+
+.nav-link, .mode-button, .metric-button, .timeline-button {
+  text-decoration: none;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--muted);
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.nav-link[aria-current="page"], .mode-button[aria-pressed="true"],
+.metric-button[aria-pressed="true"], .timeline-button[aria-pressed="true"] {
+  color: var(--fg);
+  border-color: var(--separator);
+}
+
+:is(.nav-link, .mode-button, .metric-button, .timeline-button, th button):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+main {
+  width: min(100%, 1200px);
+  margin: 0 auto;
+  padding: 0 var(--space-5) var(--space-6);
+  flex: 1;
+}
+
+/* Minimal, typography-led islands: no panels, no card borders (7.1). */
+.island { margin-block: var(--space-6); }
+.island-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--separator);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.island-head h2 { font-size: 1.05rem; font-weight: 600; margin: 0; }
+
+.metric-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-5);
+}
+.metric-selector, .timeline-selector { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+
+.collection-time { color: var(--muted); font-size: 0.85rem; margin: 0; }
+
+.chart-wrap { position: relative; height: 420px; }
+canvas { inline-size: 100%; block-size: 100%; }
+
+.data-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.data-table th, .data-table td {
+  text-align: start;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--separator);
+}
+.data-table th { color: var(--muted); font-weight: 500; font-size: 0.85rem; }
+.data-table th.num, .data-table td.num { text-align: end; }
+.data-table th button {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+}
+.data-table th button[aria-sort="ascending"], .data-table th button[aria-sort="descending"] { color: var(--fg); }
+
+.player-cell { display: inline-flex; align-items: center; gap: var(--space-2); }
+.player-cell img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+
+.change { color: var(--muted); }
+.change.positive { color: var(--positive); }
+.change.negative { color: var(--negative); }
+
+.grade-badge { border: 1px solid var(--separator); border-radius: 4px; padding: 0 var(--space-2); font-weight: 600; }
+
+.connection { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: 0.85rem; }
+.connection-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--negative); }
+
+.empty-note { color: var(--muted); }
+
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--separator);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Accessible but visually hidden content (7.7). */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .connection-dot { transition: background 0.3s; }
+}
+
+/* Narrow screens: no hidden metrics, no truncated essential stats (7.8). */
+@media (max-width: 720px) {
+  .site-header { grid-template-columns: auto auto; grid-template-areas: "brand nav" "modes modes"; }
+  .brand { grid-area: brand; }
+  .site-header > nav[aria-label="Pages"] { grid-area: nav; justify-content: end; }
+  .mode-selector { grid-area: modes; justify-content: start; }
+  .site-header nav { flex-wrap: wrap; }
+  .chart-wrap { height: 320px; }
+  .data-table { font-size: 0.9rem; }
+  .data-table th, .data-table td { padding: var(--space-1) var(--space-2); }
+}

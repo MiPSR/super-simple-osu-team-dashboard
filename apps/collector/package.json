@@ -1,0 +1,13 @@
+{
+  "name": "@osu-team/collector",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@osu-team/config": "workspace:*",
+    "@osu-team/contracts": "workspace:*",
+    "@osu-team/database": "workspace:*"
+  }
+}

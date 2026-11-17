@@ -1,0 +1,16 @@
+# Configuration for the osu! team dashboard.
+#
+# Required:
+#   team_id — osu! team identifier (positive integer). The team's identity,
+#   logo, roster and default game mode are fetched from the osu! API.
+#
+# Optional (defaults shown):
+#   rate_divider            = 2        # request budget = 60 / divider per minute
+#   score_poll_base_seconds = 5        # effective score-feed interval = base x divider (10 s by default)
+#   database_path           = "./data/team.sqlite"
+#   port                    = 3000     # web backend port
+#
+# Credentials are read from the environment, never from this file:
+#   OSU_CLIENT_ID / OSU_CLIENT_SECRET (required by the collector)
+
+team_id = 1

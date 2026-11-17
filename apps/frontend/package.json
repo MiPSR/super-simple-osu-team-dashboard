@@ -1,0 +1,14 @@
+{
+  "name": "@osu-team/frontend",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/common.ts"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.0"
+  },
+  "scripts": {
+    "build": "bun build ./src/leaderboards.ts ./src/live.ts --outdir ../web/public/assets --minify && cp public/index.html public/live.html public/style.css ../web/public/"
+  }
+}

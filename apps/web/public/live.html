@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Live osu! team plays and extended statistics: newest captured plays and sortable team leaderboard.">
+  <title>Live — osu! Team Statistics</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">
+      <img class="brand-logo" id="team-logo" alt="" hidden>
+      <span class="brand-name" id="team-name">osu! Team Statistics</span>
+    </a>
+    <nav aria-label="Pages">
+      <a href="/" class="nav-link">Leaderboards</a>
+      <a href="/live" class="nav-link" aria-current="page">Live</a>
+    </nav>
+    <nav class="mode-selector" id="mode-selector" aria-label="Game mode"></nav>
+  </header>
+
+  <main>
+    <div class="metric-bar">
+      <p class="connection" id="connection" hidden>
+        <span class="connection-dot" aria-hidden="true"></span>
+        <span id="connection-text">Reconnecting…</span>
+      </p>
+    </div>
+
+    <section class="island" aria-labelledby="plays-heading">
+      <div class="island-head">
+        <h2 id="plays-heading">Recent plays</h2>
+        <p class="collection-time" id="plays-time" aria-live="polite"></p>
+      </div>
+      <table class="data-table" id="plays-table">
+        <caption class="sr-only">Ten newest captured completed plays for the selected mode</caption>
+        <thead>
+          <tr>
+            <th scope="col">Player</th>
+            <th scope="col">Beatmap</th>
+            <th scope="col">Grade</th>
+            <th scope="col">Mods</th>
+            <th scope="col" class="num">PP</th>
+            <th scope="col" class="num">Acc</th>
+            <th scope="col" class="num">Score</th>
+            <th scope="col" class="num">Played</th>
+          </tr>
+        </thead>
+        <tbody id="plays-body"></tbody>
+      </table>
+      <p class="empty-note" id="plays-empty" hidden>No plays captured yet.</p>
+    </section>
+
+    <section class="island" aria-labelledby="live-ranking-heading">
+      <div class="island-head">
+        <h2 id="live-ranking-heading">Team statistics</h2>
+        <p class="collection-time" id="live-collection-time" aria-live="polite"></p>
+      </div>
+      <table class="data-table" id="live-table">
+        <caption class="sr-only">Extended team leaderboard built from the newest complete profile collection</caption>
+        <thead><tr id="live-head-row"></tr></thead>
+        <tbody id="live-body"></tbody>
+      </table>
+      <p class="empty-note" id="live-empty" hidden>No profile collection published yet.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a href="https://github.com/" id="footer-github">GitHub</a>
+    <span>Unofficial fan project. Not affiliated with or endorsed by ppy Pty Ltd.
+    osu! and the osu! logo are trademarks of ppy Pty Ltd.</span>
+  </footer>
+
+  <script id="bootstrap" type="application/json">__BOOTSTRAP__</script>
+  <script type="module" src="/assets/live.js"></script>
+</body>
+</html>

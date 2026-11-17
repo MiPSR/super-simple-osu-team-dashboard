@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Unofficial statistics dashboard for an osu! team: leaderboards and live plays for osu!, taiko, catch and mania.">
+  <title>Leaderboards — osu! Team Statistics</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">
+      <img class="brand-logo" id="team-logo" alt="" hidden>
+      <span class="brand-name" id="team-name">osu! Team Statistics</span>
+    </a>
+    <nav aria-label="Pages">
+      <a href="/" class="nav-link" aria-current="page">Leaderboards</a>
+      <a href="/live" class="nav-link">Live</a>
+    </nav>
+    <nav class="mode-selector" id="mode-selector" aria-label="Game mode"></nav>
+  </header>
+
+  <main>
+    <div class="metric-bar">
+      <div class="metric-selector" id="metric-selector" aria-label="Statistic"></div>
+      <p class="collection-time" id="collection-time" aria-live="polite"></p>
+    </div>
+
+    <section class="island" aria-labelledby="graph-heading">
+      <div class="island-head">
+        <h2 id="graph-heading">Metric over time</h2>
+        <div class="timeline-selector" id="timeline-selector" aria-label="Timeline"></div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="chart" role="img" aria-label="Time series of the selected statistic per player"></canvas>
+      </div>
+      <div class="sr-only" id="chart-table" aria-label="Time series data"></div>
+    </section>
+
+    <section class="island" aria-labelledby="ranking-heading">
+      <div class="island-head">
+        <h2 id="ranking-heading">Ranking</h2>
+      </div>
+      <table class="data-table" id="ranking-table">
+        <caption class="sr-only">Players ranked by the selected statistic</caption>
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Player</th>
+            <th scope="col" class="num">Now</th>
+            <th scope="col" class="num">Δ 23 h</th>
+            <th scope="col" class="num">Δ 6 d</th>
+          </tr>
+        </thead>
+        <tbody id="ranking-body"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a href="https://github.com/" id="footer-github">GitHub</a>
+    <span>Unofficial fan project. Not affiliated with or endorsed by ppy Pty Ltd.
+    osu! and the osu! logo are trademarks of ppy Pty Ltd.</span>
+  </footer>
+
+  <script id="bootstrap" type="application/json">__BOOTSTRAP__</script>
+  <script type="module" src="/assets/leaderboards.js"></script>
+</body>
+</html>
