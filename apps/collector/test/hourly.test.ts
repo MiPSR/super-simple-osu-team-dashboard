@@ -120,7 +120,7 @@ beforeEach(() => {
 async function makeCollector(options: BackendOptions, divider = 1, nowFn?: () => string): Promise<{ collector: HourlyCollector; backend: ReturnType<typeof makeBackend>; roster: TeamRoster }> {
   const backend = makeBackend(options);
   const scheduler = new Scheduler(divider, clock);
-  const client = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
+  const client = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, tokenProvider: { getAccessToken: async () => "t" } });
   const roster = new TeamRoster(client, queries, 42, silentLogger);
   const collector = nowFn
     ? new HourlyCollector(client, queries, roster, silentLogger, nowFn)

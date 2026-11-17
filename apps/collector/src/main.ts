@@ -1,10 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { loadConfig, databasePathFor } from "@osu-team/config";
+import { loadConfig, databasePathFor, writeRefreshToken } from "@osu-team/config";
 import { openDatabase, migrate } from "@osu-team/database";
 import { Queries } from "@osu-team/database";
 import { Scheduler, systemClock } from "./scheduler.ts";
 import { OsuClient } from "./osu.ts";
+import { RefreshTokenManager } from "./token.ts";
 import { TeamRoster } from "./roster.ts";
 import { ScoreFeed } from "./feed.ts";
 import { HourlyCollector, startHourlyLoop } from "./hourly.ts";
@@ -23,8 +24,7 @@ function createLogger(): Logger {
 export interface CollectorOptions {
   /** Test-only override for mock backends; production uses the official endpoints. */
   apiBase?: string;
-  /** Test-only Bearer token for mock backends. */
-  token?: string;
+  tokenUrl?: string;
 }
 
 export async function main(options: CollectorOptions = {}): Promise<void> {
@@ -49,11 +49,27 @@ export async function main(options: CollectorOptions = {}): Promise<void> {
     if (event.type === "budget-wait") logger.info(`rate budget reached; waiting ${event.waitMs} ms`);
   });
 
+  // osu! token handling (2.2): the refresh token comes from the configuration
+  // file; rotated tokens are written back. A rejected token exits the process.
+  const tokenManager = new RefreshTokenManager({
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    refreshToken: config.refreshToken,
+    tokenUrl: options.tokenUrl,
+    clock: systemClock,
+    onRotate: (refreshToken) => writeRefreshToken(config, refreshToken),
+    onDead: (reason) => {
+      logger.error(`FATAL ${reason}`);
+      process.exit(1);
+    },
+    logger,
+  });
+
   const client = new OsuClient({
     scheduler,
     logger,
     apiBase: options.apiBase,
-    token: options.token,
+    tokenProvider: tokenManager,
   });
 
   const roster = new TeamRoster(client, queries, config.teamId, logger);

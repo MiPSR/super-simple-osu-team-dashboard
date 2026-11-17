@@ -1,6 +1,7 @@
 export { Scheduler, systemClock } from "./scheduler.ts";
 export type { RequestPriority, AttemptOutcome, Clock, SchedulerEvent } from "./scheduler.ts";
 export { OsuClient, DEFAULT_API_BASE, OsuPermanentError, rulesetIdToModeName } from "./osu.ts";
+export { RefreshTokenManager, TokenDeadError, DEFAULT_TOKEN_URL } from "./token.ts";
 export type {
   TeamJson,
   UserJson,

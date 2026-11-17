@@ -22,7 +22,7 @@ Status: Draft for review. Not an implementation prompt.
 
 2.1 — Required TOML value: `team_id` (positive integer). The configured team determines its identity, logo, roster and default game mode automatically. No team-specific values are hardcoded.
 
-2.2 — Required TOML credentials: `client_id` and `client_secret` (osu! OAuth application values). Credentials live in the configuration file, never in environment variables; the file is kept out of version control.
+2.2 — osu! token handling: the required `refresh_token` lives in the configuration file, never in environment variables (the file is kept out of version control). The collector exchanges it (`grant_type=refresh_token`) for an access token kept in memory and writes the rotated refresh token osu! returns back into the file. A rejected token (400/401) exits the process with an explicit error; there is no acquisition flow in the app — the operator obtains the refresh token once, their way.
 
 2.3 — `rate_divider`: optional integer ≥ 1, default `2`. The request budget is 60/divider requests per minute; every osu! API request uses the same scheduler.
 

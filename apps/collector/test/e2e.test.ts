@@ -59,12 +59,24 @@ function user(id: number) {
   };
 }
 
+let currentRefreshToken = "e2e-refresh-1";
+
 const server = Bun.serve({
   port: PORT,
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/oauth/token") {
+      // Refresh-token grant only: validates the stored refresh token and
+      // rotates it (osu! returns a new refresh token on every refresh).
+      const body = new URLSearchParams(await request.text());
+      if (body.get("grant_type") !== "refresh_token" || body.get("refresh_token") !== currentRefreshToken) {
+        return Response.json({ error: "invalid_grant" }, { status: 400 });
+      }
+      currentRefreshToken = currentRefreshToken === "e2e-refresh-1" ? "e2e-refresh-2" : "e2e-refresh-2";
+      return Response.json({ access_token: "e2e-access", token_type: "Bearer", expires_in: 86400, refresh_token: currentRefreshToken });
+    }
     const auth = request.headers.get("Authorization");
-    if (auth !== "Bearer e2e-token") {
+    if (auth !== "Bearer e2e-access") {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
     if (url.pathname === "/api/v2/teams/55") {
@@ -119,11 +131,12 @@ afterAll(() => {
 describe("collector end-to-end (8.6)", () => {
   test("runs the full startup pipeline against a mock osu! backend", async () => {
     // The app reads data/config.toml relative to its working directory; the
-    // database lives beside it (data/team.sqlite).
+    // database lives beside it (data/team.sqlite). The refresh token is the
+    // operator-provided one; the collector must rotate it on first refresh.
     mkdirSync(`${WORK}/data`, { recursive: true });
     await Bun.write(
       `${WORK}/data/config.toml`,
-      "team_id = 55\nclient_id = 1\nclient_secret = \"e2e-secret\"\nrate_divider = 1\n",
+      'team_id = 55\nclient_id = 1\nclient_secret = "e2e-secret"\nrefresh_token = "e2e-refresh-1"\nrate_divider = 1\n',
     );
 
     const proc = Bun.spawn({
@@ -173,6 +186,11 @@ describe("collector end-to-end (8.6)", () => {
     // Feed initialized with the persisted cursor (3.3); only the team score retained (3.2).
     const state = check.query("SELECT cursor_string FROM collector_state").get() as { cursor_string: string };
     expect(state.cursor_string).toBe("cursor-head-1");
+
+    // The rotated refresh token replaced the stored one in the config file.
+    const storedConfig = await Bun.file(`${WORK}/data/config.toml`).text();
+    expect(storedConfig).toContain('refresh_token = "e2e-refresh-2"');
+    expect(storedConfig).toContain("team_id = 55");
     const scores = check.query("SELECT id, player_id FROM scores").all() as Array<Record<string, number>>;
     expect(scores).toEqual([{ id: 9001, player_id: 11 }]);
     const beatmap = check.query("SELECT title, difficulty_name FROM beatmaps").get() as Record<string, string>;

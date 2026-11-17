@@ -124,8 +124,8 @@ export interface OsuClientOptions {
   logger?: Logger;
   /** Test-only override for mock backends; production uses the official endpoints. */
   apiBase?: string;
-  /** Bearer token used for every API request. Acquisition is out of scope here. */
-  token?: string;
+  /** Provides the Bearer token (refresh-token manager); acquisition is not part of the client. */
+  tokenProvider?: { getAccessToken(force?: boolean): Promise<string> };
 }
 
 export class OsuClient {
@@ -151,15 +151,30 @@ export class OsuClient {
   /** GET an api/v2 path through the scheduler with retry classification. */
   async api<T>(path: string, opts: { priority: RequestPriority; context: string }): Promise<T> {
     return this.options.scheduler.schedule<T>(opts.priority, async () => {
-      const headers: Record<string, string> = { Accept: "application/json" };
-      if (this.options.token !== undefined) {
-        headers.Authorization = `Bearer ${this.options.token}`;
-      }
+      const provider = this.options.tokenProvider;
+      const bearer = provider ? await provider.getAccessToken() : null;
       let response: Response;
       try {
-        response = await this.fetchFn(`${this.apiBase}${path}`, { headers });
+        response = await this.fetchFn(`${this.apiBase}${path}`, {
+          headers: bearer ? { Accept: "application/json", Authorization: `Bearer ${bearer}` } : { Accept: "application/json" },
+        });
       } catch (err) {
         return { kind: "transient", detail: `network error for ${path}: ${(err as Error).message}` };
+      }
+
+      // Access token expired mid-run: refresh once, retry the request once.
+      if (response.status === 401 && provider) {
+        const renewed = await provider.getAccessToken(true).catch((err: Error) => err);
+        if (renewed instanceof Error) {
+          return { kind: "permanent", detail: `${path}: token refresh failed — ${renewed.message}` };
+        }
+        response = await this.fetchFn(`${this.apiBase}${path}`, {
+          headers: { Accept: "application/json", Authorization: `Bearer ${renewed}` },
+        });
+        if (response.status === 401) {
+          this.logger?.error(`permanent API failure 401 for ${path} (${opts.context})`);
+          return { kind: "permanent", detail: `${path} returned 401 after token refresh (${opts.context})` };
+        }
       }
 
       if (response.status === 429 || response.status >= 500) {

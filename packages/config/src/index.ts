@@ -15,6 +15,8 @@ export interface AppConfig {
   teamId: number;
   clientId: string;
   clientSecret: string;
+  /** osu! refresh token stored by the operator; rotated tokens are written back. */
+  refreshToken: string;
   /** Optional: request budget = 60 / rateDivider per minute. Default 2. */
   rateDivider: number;
   /** Path the configuration was loaded from (the data directory anchor). */
@@ -79,6 +81,7 @@ export function validateConfig(raw: Record<string, unknown>, configPath: string)
 
   const clientId = requireClientId(raw, "client_id", configPath);
   const clientSecret = requireString(raw, "client_secret", configPath);
+  const refreshToken = requireString(raw, "refresh_token", configPath);
 
   const rateDividerRaw = raw["rate_divider"];
   if (rateDividerRaw !== undefined && !isInteger(rateDividerRaw)) {
@@ -89,7 +92,24 @@ export function validateConfig(raw: Record<string, unknown>, configPath: string)
     throw new ConfigError(`${configPath}: "rate_divider" must be an integer ≥ 1, got ${rateDivider}`);
   }
 
-  return { teamId, clientId, clientSecret, rateDivider, configPath };
+  return { teamId, clientId, clientSecret, refreshToken, rateDivider, configPath };
+}
+
+/**
+ * Persist the rotated refresh token: the app replaces the `refresh_token`
+ * value in the configuration file with the latest one returned by osu!.
+ * Only the file value changes — nothing on osu!'s side.
+ */
+export async function writeRefreshToken(config: AppConfig, refreshToken: string): Promise<void> {
+  const lines = [
+    `team_id = ${config.teamId}`,
+    `client_id = ${config.clientId}`,
+    `client_secret = "${config.clientSecret}"`,
+    `rate_divider = ${config.rateDivider}`,
+    `refresh_token = "${refreshToken}"`,
+    "",
+  ];
+  await Bun.write(config.configPath, lines.join("\n"));
 }
 
 /** Load and validate `data/config.toml` from the working directory. */

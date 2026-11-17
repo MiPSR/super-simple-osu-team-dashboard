@@ -4,5 +4,5 @@ import { main } from "../src/main.ts";
 // osu! backend started by e2e.test.ts. Production main() has no such options.
 await main({
   apiBase: "http://127.0.0.1:42091/api/v2",
-  token: "e2e-token",
+  tokenUrl: "http://127.0.0.1:42091/oauth/token",
 });

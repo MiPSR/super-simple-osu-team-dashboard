@@ -58,8 +58,15 @@ $EDITOR data/config.toml
 team_id = 1                     # required: osu! team id
 client_id = 1                   # required: osu! OAuth application id
 client_secret = "..."           # required: osu! OAuth application secret
+refresh_token = "..."           # required: your stored osu! refresh token
 rate_divider = 2                # optional: request budget = 60/divider per minute
 ```
+
+The collector exchanges the stored refresh token for an access token and
+writes the rotated refresh token osu! returns back into this file. A rejected
+token exits the process — replace the value and restart. There is no token
+acquisition flow in the app; how you obtain the refresh token (one-time
+OAuth authorization with your osu! account) is up to you.
 
 The SQLite database is created beside it (`data/team.sqlite`) on first start.
 `data/` is gitignored — locally it holds your config and state; on a server

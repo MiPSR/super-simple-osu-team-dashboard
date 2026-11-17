@@ -45,7 +45,7 @@ function makeClient(fetchFn: typeof fetch, token?: string, divider = 1): OsuClie
     scheduler,
     clock,
     fetchFn,
-    token,
+    tokenProvider: { getAccessToken: async () => token ?? "" },
   });
 }
 
@@ -66,11 +66,17 @@ describe("osu! client authentication", () => {
     }
   });
 
-  test("401 is a permanent failure — no retry, no renewal", async () => {
+  test("401 triggers one forced refresh and one retry, then permanent failure", async () => {
+    let refreshes = 0;
     const backend = makeOsuBackend(() => jsonResponse({ error: "unauthorized" }, 401));
-    const client = makeClient(backend.fetchFn, "tok-42");
+    const client = new OsuClient({
+      scheduler: new Scheduler(1, new FakeClock()),
+      fetchFn: backend.fetchFn,
+      tokenProvider: { getAccessToken: async (force?: boolean) => (force ? refreshes++ : 0, "tok-42") },
+    });
     await expect(client.getTeam(1)).rejects.toThrow(/401/);
-    expect(backend.calls).toHaveLength(1);
+    expect(backend.calls).toHaveLength(2); // initial + one retry after forced refresh
+    expect(refreshes).toBe(1);
   });
 
   test("5xx and 429 go through scheduler backoff and succeed", async () => {

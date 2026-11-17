@@ -15,6 +15,9 @@ client_id = 1               # osu! OAuth application client id — from
                             # https://osu.ppy.sh/home/account/edit#oauth
 client_secret = "replace-me"  # osu! OAuth application client secret — keep
                               # this file out of version control
+refresh_token = "replace-me"  # your stored osu! refresh token — the collector
+                              # renews it and writes the rotated token back
+                              # into this file; a rejected token exits
 
 rate_divider = 2            # optional; request budget = 60 / rate_divider
                             # per minute (default 2)
