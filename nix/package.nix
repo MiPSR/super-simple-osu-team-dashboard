@@ -5,7 +5,7 @@
   bun,
   cacert,
   # Set after the first build: `nix build .# 2>&1 | grep got:` then paste the hash.
-  bunDepsHash ? "sha256-e22PnlNXsS1NAlnEymTYwLZs6rUQETaooks7XMaIHww=",
+  bunDepsHash ? "sha256-jYg5wQY7MpN0rziB/DtBMl6Tg9KVRuanHilyQiB0dq8=",
 }: let
   pname = "osu-team-dashboard";
   version = "0.1.0";
@@ -116,8 +116,8 @@ in
       runHook postInstall
     '';
 
-    # The app reads its configuration and writes its SQLite file into the
-    # working directory (./team.toml, ./data by default).
+    # The app reads its configuration from data/config.toml in the working
+    # directory; the SQLite database is created beside it.
     passthru = {
       inherit bunDeps;
     };

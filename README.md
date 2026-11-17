@@ -5,7 +5,7 @@ with hourly history and live recent plays, for all four game modes
 (osu!, osu!taiko, osu!catch, osu!mania).
 
 An independent **collector** polls the [osu!api v2](https://osu.ppy.sh/docs/index.html)
-with OAuth2 client credentials into a local SQLite database (WAL), and an
+with a configured Bearer token into a local SQLite database (WAL), and an
 **Elysia** web backend serves the site, JSON endpoints and Server-Sent Events.
 Not affiliated with or endorsed by ppy Pty Ltd.
 
@@ -16,7 +16,7 @@ Monorepo with Bun workspaces, TypeScript (`strict: true`) and three components
 
 ```
 apps/
-  collector/   osu! OAuth2, request scheduler, team sync, score feed,
+  collector/   osu! request scheduler, team sync, score feed,
                hourly profile snapshots, beatmap enrichment
   web/         Elysia web backend: pages, JSON API, SSE
   frontend/    vanilla TypeScript + Chart.js, built with Bun's bundler
@@ -34,40 +34,36 @@ writer (the collector), concurrent readers (the web backend).
 ### With Nix (recommended)
 
 ```sh
-nix run github:<you>/super-simple-osu-team-dashboard
+nix run github:MiPSR/super-simple-osu-team-dashboard
 ```
 
 or build first, then run the separate processes:
 
 ```sh
-nix build github:<you>/super-simple-osu-team-dashboard
+nix build github:MiPSR/super-simple-osu-team-dashboard
 result/bin/dashboard-web
 result/bin/dashboard-collector   # production runs them as separate processes
 ```
 
-Requirements at runtime:
+The app reads its entire configuration from `data/config.toml` in the working
+directory — no environment variables, no CLI flags:
 
-1. A configuration file (default `./team.toml` in the working directory; or
-   `--config <path>` / `TEAM_CONFIG` env). See `config.example.toml`:
+```sh
+mkdir -p data
+cp config.example.toml data/config.toml
+$EDITOR data/config.toml
+```
 
-   ```toml
-   team_id = 1234                # required: osu! team id (positive integer)
-   # rate_divider = 2            # request budget = 60/divider per minute (default 2)
-   # score_poll_base_seconds = 5 # effective feed interval = base × divider (10 s by default)
-   # database_path = "./data/team.sqlite"
-   # port = 3000
-   ```
+```toml
+team_id = 1                     # required: osu! team id
+client_id = 1                   # required: osu! OAuth application id
+client_secret = "..."           # required: osu! OAuth application secret
+rate_divider = 2                # optional: request budget = 60/divider per minute
+```
 
-2. Environment credentials (never in the TOML):
-
-   ```sh
-   export OSU_CLIENT_ID=...      # from https://osu.ppy.sh/home/account/edit#oauth
-   export OSU_CLIENT_SECRET=...
-   ```
-
-3. The working directory holds the state: `./team.toml` and `./data/team.sqlite`
-   are created on first start, then hourly profile collections and captured
-   team scores accumulate (graphs fill progressively — no artificial backfill).
+The SQLite database is created beside it (`data/team.sqlite`) on first start.
+`data/` is gitignored — locally it holds your config and state; on a server
+(or bind-mounted into a container) it is the same one-directory layout.
 
 ### Without Nix
 
@@ -85,26 +81,33 @@ bun run typecheck  # tsc --noEmit (strict)
 ### Container
 
 The flake package is self-contained (Bun in the closure, no FHS paths needed),
-so it drops directly into a container. The container itself is yours to build;
-a minimal sketch using the flake package:
+so it drops directly into a NixOS container (`containers.<name>` with
+`bindMounts`) or any other container. The container itself is yours to build;
+it needs exactly one data directory, bind-mounted, with the working directory
+set to it so `data/config.toml` and `data/team.sqlite` live there:
 
 ```nix
-# your container / OCI image definition
-pkgs.dockerTools.buildLayeredImage {
-  name = "osu-team-dashboard";
-  config = {
-    Cmd = [ "${osuTeamDashboard}/bin/dashboard" ];
-    Env = [
-      "OSU_CLIENT_ID=..."
-      "OSU_CLIENT_SECRET=..."
-      "TEAM_CONFIG=/etc/team.toml"
-    ];
+containers.osu-dash = {
+  bindMounts.data = {
+    hostPath = "/var/lib/osu-dashboard";
+    mountPoint = "/data";
   };
-}
+  config = {
+    systemd.services.dashboard = {
+      after = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        # the flake package, e.g. inputs.self.packages.x86_64-linux.default
+        ExecStart = "${inputs.self.packages.x86_64-linux.default}/bin/dashboard";
+        WorkingDirectory = "/data";
+      };
+    };
+  };
+};
 ```
 
-Only mount/provide a writable working directory (or set `database_path` in the
-TOML to a mounted path) and the two environment variables.
+The single requirement: the process working directory must contain
+`data/config.toml` (and thus `data/team.sqlite`).
 
 ## What it collects
 
@@ -119,9 +122,9 @@ TOML to a mounted path) and the two environment variables.
   ≤ 50 via `GET /users?ids[]=` and one snapshot per member per game mode is
   stored — or the failed attempt is recorded and nothing partial is published.
 - **Rate limiting**: one sequential request queue, `rate_divider × 1 s`
-  minimum spacing and a rolling 60/divider-per-minute budget; ≤ 3 retries for
-  network/5xx/429 (honouring `Retry-After`, else exponential backoff), token
-  renewal on 401.
+  minimum spacing and a rolling 60/divider-per-minute budget; transient
+  failures (network/5xx/429) retry with exponential backoff honouring
+  `Retry-After`, per the osu! wiki good practices; other 4xx fail immediately.
 
 ## Website
 

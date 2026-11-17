@@ -116,6 +116,9 @@ dist
 result
 result-*
 
+# Runtime data directory: config.toml (with secrets) + SQLite database
+/data/
+
 # Generated frontend bundle output
 apps/web/public/assets/
 

@@ -1,26 +1,30 @@
-import { parse } from "smol-toml";
-
 /**
- * Validated configuration shared by both server processes (spec section 2).
+ * The single configuration file: `data/config.toml` (relative to the working
+ * directory). Both server processes read it. There are no environment
+ * variables, no CLI flags and no defaults in code for the required keys — a
+ * missing value is an explicit startup error (spec section 2).
  *
- * - `team_id` is required (positive integer).
- * - `rate_divider` ≥ 1 (default 2): request budget is 60/divider per minute.
- * - `score_poll_base_seconds` > 0 (default 5): effective score-feed interval
- *   is base × divider (10 s by default).
- * - Missing required values prevent startup with an explicit error (2.6).
- *
- * Credentials come from the environment only (OSU_CLIENT_ID /
- * OSU_CLIENT_SECRET) — never from the TOML file.
+ * TOML is parsed natively by Bun. The SQLite database lives in the same data
+ * directory as this file.
  */
+
+/** Fixed location of the configuration file. */
+export const CONFIG_PATH = "data/config.toml";
 
 export interface AppConfig {
   teamId: number;
+  clientId: string;
+  clientSecret: string;
+  /** Optional: request budget = 60 / rateDivider per minute. Default 2. */
   rateDivider: number;
-  scorePollBaseSeconds: number;
-  databasePath: string;
-  port: number;
-  /** Path the configuration was loaded from (for diagnostics). */
+  /** Path the configuration was loaded from (the data directory anchor). */
   configPath: string;
+}
+
+/** The SQLite file sits beside the config file in the same data directory. */
+export function databasePathFor(config: AppConfig): string {
+  const dir = config.configPath.slice(0, config.configPath.lastIndexOf("/"));
+  return `${dir}/team.sqlite`;
 }
 
 export class ConfigError extends Error {}
@@ -29,97 +33,79 @@ function isInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
 }
 
-function readOptionalInt(raw: Record<string, unknown>, key: string, errorPrefix: string): number | undefined {
+function requireInt(raw: Record<string, unknown>, key: string, configPath: string): number {
   const value = raw[key];
-  if (value === undefined) return undefined;
+  if (value === undefined) {
+    throw new ConfigError(`${configPath}: missing required value "${key}"`);
+  }
   if (!isInteger(value)) {
-    throw new ConfigError(`${errorPrefix}: "${key}" must be an integer, got ${typeof value}`);
+    throw new ConfigError(`${configPath}: "${key}" must be an integer, got ${typeof value}`);
   }
   return value;
 }
 
-export function loadConfigFromString(toml: string, configPath: string): AppConfig {
-  let raw: Record<string, unknown>;
-  try {
-    raw = parse(toml) as Record<string, unknown>;
-  } catch (err) {
-    throw new ConfigError(`${configPath}: invalid TOML — ${(err as Error).message}`);
+function requireString(raw: Record<string, unknown>, key: string, configPath: string): string {
+  const value = raw[key];
+  if (value === undefined) {
+    throw new ConfigError(`${configPath}: missing required value "${key}"`);
   }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new ConfigError(`${configPath}: "${key}" must be a non-empty string`);
+  }
+  return value;
+}
 
-  const teamId = readOptionalInt(raw, "team_id", configPath);
-  if (teamId === undefined) {
-    throw new ConfigError(`${configPath}: missing required value "team_id"`);
+/** The osu! client ID is numeric; accept an integer or its decimal string form. */
+function requireClientId(raw: Record<string, unknown>, key: string, configPath: string): string {
+  const value = raw[key];
+  if (value === undefined) {
+    throw new ConfigError(`${configPath}: missing required value "${key}"`);
   }
+  if (isInteger(value)) {
+    if ((value as number) <= 0) {
+      throw new ConfigError(`${configPath}: "${key}" must be a positive id, got ${value}`);
+    }
+    return String(value);
+  }
+  return requireString(raw, key, configPath);
+}
+
+/** Validate the parsed TOML object. Exported for tests. */
+export function validateConfig(raw: Record<string, unknown>, configPath: string): AppConfig {
+  const teamId = requireInt(raw, "team_id", configPath);
   if (teamId <= 0) {
     throw new ConfigError(`${configPath}: "team_id" must be a positive integer, got ${teamId}`);
   }
 
-  const rateDivider = readOptionalInt(raw, "rate_divider", configPath) ?? 2;
+  const clientId = requireClientId(raw, "client_id", configPath);
+  const clientSecret = requireString(raw, "client_secret", configPath);
+
+  const rateDividerRaw = raw["rate_divider"];
+  if (rateDividerRaw !== undefined && !isInteger(rateDividerRaw)) {
+    throw new ConfigError(`${configPath}: "rate_divider" must be an integer, got ${typeof rateDividerRaw}`);
+  }
+  const rateDivider = (rateDividerRaw as number | undefined) ?? 2;
   if (rateDivider < 1) {
     throw new ConfigError(`${configPath}: "rate_divider" must be an integer ≥ 1, got ${rateDivider}`);
   }
 
-  const scorePollBaseSeconds = readOptionalInt(raw, "score_poll_base_seconds", configPath) ?? 5;
-  if (scorePollBaseSeconds <= 0) {
-    throw new ConfigError(
-      `${configPath}: "score_poll_base_seconds" must be a positive integer, got ${scorePollBaseSeconds}`,
-    );
-  }
-
-  const databasePath = raw["database_path"];
-  if (databasePath !== undefined && typeof databasePath !== "string") {
-    throw new ConfigError(`${configPath}: "database_path" must be a string`);
-  }
-
-  const port = readOptionalInt(raw, "port", configPath) ?? 3000;
-  if (port <= 0 || port > 65535) {
-    throw new ConfigError(`${configPath}: "port" must be an integer between 1 and 65535, got ${port}`);
-  }
-
-  return {
-    teamId,
-    rateDivider,
-    scorePollBaseSeconds,
-    databasePath: (databasePath as string | undefined) ?? "./data/team.sqlite",
-    port,
-    configPath,
-  };
+  return { teamId, clientId, clientSecret, rateDivider, configPath };
 }
 
-/** Resolve the config path from --config / TEAM_CONFIG / default "./team.toml". */
-export function resolveConfigPath(argv: string[], env: Record<string, string | undefined>): string {
-  const flagIndex = argv.indexOf("--config");
-  if (flagIndex !== -1 && argv[flagIndex + 1] !== undefined) {
-    return argv[flagIndex + 1] as string;
-  }
-  return env.TEAM_CONFIG ?? "./team.toml";
-}
-
-export async function loadConfig(configPath: string): Promise<AppConfig> {
-  let text: string;
+/** Load and validate `data/config.toml` from the working directory. */
+export async function loadConfig(): Promise<AppConfig> {
+  const absolute = `${process.cwd()}/${CONFIG_PATH}`;
+  let raw: Record<string, unknown>;
   try {
-    text = await Bun.file(configPath).text();
-  } catch {
+    const mod = (await import(absolute)) as { default?: Record<string, unknown> };
+    raw = (mod.default ?? mod) as Record<string, unknown>;
+  } catch (err) {
+    const code = (err as { code?: string }).code;
     throw new ConfigError(
-      `configuration file not found: ${configPath} (pass --config <path>, set TEAM_CONFIG, or create ./team.toml — see config.example.toml)`,
+      code === "ERR_MODULE_NOT_FOUND"
+        ? `configuration file not found: ${CONFIG_PATH} (create it from config.example.toml in the working directory)`
+        : `invalid configuration: ${CONFIG_PATH} — ${(err as Error).message}`,
     );
   }
-  return loadConfigFromString(text, configPath);
-}
-
-export interface OsuCredentials {
-  clientId: string;
-  clientSecret: string;
-}
-
-/** osu! OAuth2 client credentials from the environment (2.2). */
-export function loadCredentials(env: Record<string, string | undefined>): OsuCredentials {
-  const clientId = env.OSU_CLIENT_ID;
-  const clientSecret = env.OSU_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
-    throw new ConfigError(
-      "missing required environment credentials: OSU_CLIENT_ID and OSU_CLIENT_SECRET must be set",
-    );
-  }
-  return { clientId, clientSecret };
+  return validateConfig(raw, CONFIG_PATH);
 }

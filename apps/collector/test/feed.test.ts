@@ -109,7 +109,7 @@ beforeEach(async () => {
   clock = new FakeClock();
   const scheduler = new Scheduler(1, clock);
   const backend = makeBackend({ scoresPages: [] });
-  client = new OsuClient({ clientId: "1", clientSecret: "s", scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger });
+  client = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
   roster = new TeamRoster(client, queries, 42, silentLogger);
   await roster.sync();
 });
@@ -120,8 +120,8 @@ describe("score feed (3.2, 3.3, 3.4)", () => {
       scoresPages: [{ scores: [makeScore(1, 1), makeScore(2, 99)], cursor_string: "c-head" }],
     });
     const scheduler = new Scheduler(1, clock);
-    const osu = new OsuClient({ clientId: "1", clientSecret: "s", scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger });
-    const feed = new ScoreFeed(osu, queries, roster, 5, 2, silentLogger);
+    const osu = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
+    const feed = new ScoreFeed(osu, queries, roster, 2, silentLogger);
     expect(await feed.pollOnce()).toBe(true); // partial batch ends catch-up
     expect(queries.getState().cursorString).toBe("c-head");
     // Only team members' scores are retained (3.2).
@@ -137,8 +137,8 @@ describe("score feed (3.2, 3.3, 3.4)", () => {
       ],
     });
     const scheduler = new Scheduler(1, clock);
-    const osu = new OsuClient({ clientId: "1", clientSecret: "s", scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger });
-    const feed = new ScoreFeed(osu, queries, roster, 5, 2, silentLogger);
+    const osu = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
+    const feed = new ScoreFeed(osu, queries, roster, 2, silentLogger);
     // First poll: partial head batch → catch-up ends (3.3, 3.4).
     expect(await feed.pollOnce()).toBe(true);
     expect(queries.getState().cursorString).toBe("c1");
@@ -159,8 +159,8 @@ describe("score feed (3.2, 3.3, 3.4)", () => {
       ],
     });
     const scheduler = new Scheduler(1, clock);
-    const osu = new OsuClient({ clientId: "1", clientSecret: "s", scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger });
-    const feed = new ScoreFeed(osu, queries, roster, 5, 2, silentLogger);
+    const osu = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
+    const feed = new ScoreFeed(osu, queries, roster, 2, silentLogger);
     await feed.catchUp();
     // The persisted cursor is the last returned cursor; the follow-up batch was ingested.
     expect(queries.getState().cursorString).toBe("c2");
@@ -178,8 +178,8 @@ describe("score feed (3.2, 3.3, 3.4)", () => {
       ],
     });
     const scheduler = new Scheduler(1, clock);
-    const osu = new OsuClient({ clientId: "1", clientSecret: "s", scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger });
-    const feed = new ScoreFeed(osu, queries, roster, 5, 2, silentLogger);
+    const osu = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
+    const feed = new ScoreFeed(osu, queries, roster, 2, silentLogger);
     await feed.catchUp();
     const rows = db.query("SELECT COUNT(*) AS n FROM scores").get() as { n: number };
     expect(rows.n).toBe(1);
@@ -191,8 +191,8 @@ describe("score feed (3.2, 3.3, 3.4)", () => {
       scoresPages: [{ scores: [makeScore(9, 2)], cursor_string: "c-next" }],
     });
     const scheduler = new Scheduler(1, clock);
-    const osu = new OsuClient({ clientId: "1", clientSecret: "s", scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger });
-    const feed = new ScoreFeed(osu, queries, roster, 5, 2, silentLogger);
+    const osu = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
+    const feed = new ScoreFeed(osu, queries, roster, 2, silentLogger);
     await feed.catchUp();
     expect(queries.getState().cursorString).toBe("c-next");
   });
@@ -202,8 +202,8 @@ describe("score feed (3.2, 3.3, 3.4)", () => {
       scoresPages: [{ scores: [makeScore(11, 1)], cursor_string: "c1" }],
     });
     const scheduler = new Scheduler(1, clock);
-    const osu = new OsuClient({ clientId: "1", clientSecret: "s", scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger });
-    const feed = new ScoreFeed(osu, queries, roster, 5, 2, silentLogger);
+    const osu = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
+    const feed = new ScoreFeed(osu, queries, roster, 2, silentLogger);
     await feed.catchUp();
     const rows = db.query("SELECT title, artist, cover_url FROM beatmaps").get() as Record<string, string>;
     expect(rows.title).toBe("Song");

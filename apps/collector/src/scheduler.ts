@@ -3,12 +3,13 @@
  *
  * - One sequential queue; every osu! API request goes through it.
  * - Minimum spacing between request starts: `rate_divider` × 1 s.
- * - Rolling 60-second budget: 60 / rate_divider requests per minute.
+ * - Rolling 60-second budget: 60 / rate_divider requests per minute
+ *   (osu! wiki: ≤ 60 requests per minute, generally 1 request per second).
  * - Priorities: score-feed requests first when behind; hourly profile and
  *   beatmap-enrichment requests run between feed requests without starving
  *   (a request that has waited ≥ 30 s ages past higher-priority newcomers).
- * - Retries: ≤ 3 attempts for network/5xx/429, honouring `Retry-After`,
- *   otherwise exponential backoff. 401 triggers token renewal (separate cap).
+ * - Failures follow the osu! wiki good practices: exponential backoff for
+ *   network/5xx/429, honouring `Retry-After`; other 4xx fail immediately.
  */
 
 export type RequestPriority = "feed" | "hourly" | "beatmap";
@@ -20,8 +21,6 @@ const PRIORITY_ORDER: Record<RequestPriority, number> = {
 };
 
 const AGING_STEP_MS = 30_000;
-const AUTH_RETRY_CAP = 3;
-export const MAX_ATTEMPTS = 3;
 
 export interface Clock {
   now(): number;
@@ -36,8 +35,6 @@ export const systemClock: Clock = {
 /** Outcome of a single HTTP attempt, classified by the caller (OsuClient). */
 export type AttemptOutcome<T> =
   | { kind: "ok"; value: T }
-  /** 401 — renew credentials and retry (attempts not consumed). */
-  | { kind: "auth" }
   /** network / 5xx / 429 — retryable with optional Retry-After. */
   | { kind: "transient"; retryAfterMs?: number; detail?: string }
   /** other 4xx etc. — permanent. */
@@ -48,7 +45,6 @@ interface QueueItem<T> {
   enqueuedAt: number;
   notBefore: number;
   attempt: number;
-  authRetries: number;
   task: () => Promise<AttemptOutcome<T>>;
   resolve: (value: T) => void;
   reject: (error: Error) => void;
@@ -85,7 +81,6 @@ export class Scheduler {
         enqueuedAt: this.clock.now(),
         notBefore: this.clock.now(),
         attempt: 0,
-        authRetries: 0,
         task,
         resolve,
         reject,
@@ -168,28 +163,12 @@ export class Scheduler {
           continue;
         }
 
-        if (outcome.kind === "auth") {
-          if (item.authRetries >= AUTH_RETRY_CAP) {
-            item.reject(new Error(`authentication failed after ${AUTH_RETRY_CAP} renewals`));
-            continue;
-          }
-          item.authRetries += 1;
-          item.notBefore = this.clock.now();
-          this.queue.push(item);
-          this.onEvent?.({ type: "auth-retry", count: item.authRetries });
-          continue;
-        }
-
         if (outcome.kind === "transient") {
-          if (item.attempt + 1 >= MAX_ATTEMPTS) {
-            item.reject(new Error(`${outcome.detail ?? "request failed"} — gave up after ${MAX_ATTEMPTS} attempts`));
-            this.onEvent?.({ type: "permanent-failure", priority: item.priority, detail: outcome.detail });
-            continue;
-          }
           item.attempt += 1;
+          // osu! wiki good practice: exponential backoff, honour Retry-After.
           const backoff =
             outcome.retryAfterMs ??
-            1_000 * 2 ** item.attempt; // 2 s, 4 s … exponential backoff (3.6)
+            Math.min(1_000 * 2 ** item.attempt, 60_000); // 2 s, 4 s … capped at 1 min
           item.notBefore = this.clock.now() + backoff;
           this.queue.push(item);
           this.onEvent?.({ type: "retry", priority: item.priority, attempt: item.attempt, backoffMs: backoff });
@@ -208,6 +187,5 @@ export class Scheduler {
 export type SchedulerEvent =
   | { type: "request"; priority: RequestPriority; attempt: number }
   | { type: "retry"; priority: RequestPriority; attempt: number; backoffMs: number }
-  | { type: "auth-retry"; count: number }
   | { type: "budget-wait"; waitMs: number }
   | { type: "permanent-failure"; priority: RequestPriority; detail?: string };

@@ -73,7 +73,7 @@ function makeTeam(ids: number[]): TeamJson {
 
 interface BackendOptions {
   rosterIds: number[];
-  /** Fail every /users request (after scheduler retries) when true. */
+  /** Fail /users requests: two transient 503s, then a permanent 404 (terminates backoff). */
   failUsers?: boolean;
   /** Omit these user ids from /users responses (incomplete data). */
   omitUsers?: number[];
@@ -94,7 +94,10 @@ function makeBackend(options: BackendOptions) {
       const matches = url.match(/ids%5B%5D=(\d+)/g) ?? [];
       const ids = matches.map((m) => Number(m.split("=")[1]));
       usersCalls.push(ids);
-      if (options.failUsers) return jsonResponse({ error: "upstream down" }, 503);
+      if (options.failUsers) {
+        // Two transient 5xx, then a permanent 404 so scheduler backoff terminates.
+        return usersCalls.length <= 2 ? jsonResponse({ error: "upstream down" }, 503) : jsonResponse({}, 404);
+      }
       const returned = ids.filter((id) => !options.omitUsers?.includes(id));
       return jsonResponse({ users: returned.map(makeUser) });
     }
@@ -117,7 +120,7 @@ beforeEach(() => {
 async function makeCollector(options: BackendOptions, divider = 1, nowFn?: () => string): Promise<{ collector: HourlyCollector; backend: ReturnType<typeof makeBackend>; roster: TeamRoster }> {
   const backend = makeBackend(options);
   const scheduler = new Scheduler(divider, clock);
-  const client = new OsuClient({ clientId: "1", clientSecret: "s", scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger });
+  const client = new OsuClient({ scheduler, clock, fetchFn: backend.fetchFn, logger: silentLogger, token: "t" });
   const roster = new TeamRoster(client, queries, 42, silentLogger);
   const collector = nowFn
     ? new HourlyCollector(client, queries, roster, silentLogger, nowFn)

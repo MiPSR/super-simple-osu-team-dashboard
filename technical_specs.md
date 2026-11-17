@@ -14,21 +14,23 @@ Status: Draft for review. Not an implementation prompt.
 
 1.5 — Shared packages: `database` for SQLite schema/migrations/queries, `contracts` for game modes and metric definitions, and `config` for validated TOML loading. One database writer (collector), concurrent readers through SQLite WAL.
 
-1.6 — Deployment: one SQLite file shared by both server processes on the same machine. Default path `./data/team.sqlite`; web backend port `3000`. No external database server or message broker.
+1.6 — Deployment: one SQLite file shared by both server processes on the same machine, created beside the configuration in the data directory (`data/` by default: `data/config.toml` + `data/team.sqlite`). Web backend port `3000`. No external database server or message broker.
+
+1.7 — Configuration is a single TOML file read by both server processes from a fixed relative location; there are no environment variables and no CLI flags. The data directory is the state anchor: locally `./data/`, or any directory provided by the deployment (e.g. bind-mounted into a NixOS container).
 
 ## 2. Configuration
 
 2.1 — Required TOML value: `team_id` (positive integer). The configured team determines its identity, logo, roster and default game mode automatically. No team-specific values are hardcoded.
 
-2.2 — Required environment credentials: `OSU_CLIENT_ID` and `OSU_CLIENT_SECRET`. OAuth2 client-credentials authentication with the public scope; token renewal handled by the collector.
+2.2 — Required TOML credentials: `client_id` and `client_secret` (osu! OAuth application values). Credentials live in the configuration file, never in environment variables; the file is kept out of version control.
 
-2.3 — `rate_divider`: integer ≥ 1, default `2`. The request budget is 60/divider requests per minute; every osu! API request uses the same scheduler.
+2.3 — `rate_divider`: optional integer ≥ 1, default `2`. The request budget is 60/divider requests per minute; every osu! API request uses the same scheduler.
 
-2.4 — `score_poll_base_seconds`: positive integer, default `5` (proposed based on existing score-feed collectors). Effective regular polling interval = `score_poll_base_seconds × rate_divider`, therefore 10 seconds by default.
+2.4 — The score-feed base interval is a fixed rule, not a parameter: 5 seconds. Effective regular polling interval = `5 × rate_divider`, therefore 10 seconds by default.
 
 2.5 — Hourly profile collection interval: exactly 1 hour, fixed in code. The divider affects request execution speed, not the hourly schedule.
 
-2.6 — Both server processes read the same validated configuration; the frontend receives only public team information through the web backend. Missing required values prevent startup with an explicit error.
+2.6 — Both server processes read the same validated configuration from `data/config.toml`; the SQLite file is created in the same directory. The frontend receives only public team information through the web backend. Missing required values prevent startup with an explicit error naming the key and the file. The web backend port is fixed at 3000; there is no configurable port or database path.
 
 ## 3. Collector — osu! Data Acquisition
 
@@ -42,7 +44,7 @@ Status: Draft for review. Not an implementation prompt.
 
 3.5 — API scheduler: one sequential request queue, minimum spacing `rate_divider × 1 second`, with a rolling 60-second request limit. Score-feed requests receive priority when behind; hourly profile requests run between feed requests without starving either workload.
 
-3.6 — Error handling: maximum 3 attempts per request for retryable network/5xx/429 failures; honor `Retry-After`, otherwise use exponential backoff. Authentication failure triggers token renewal. Permanent failures are logged with the endpoint and collection context.
+3.6 — Error handling follows the osu! wiki good practices: transient failures (network, 5xx, 429) retry with exponential backoff, honouring `Retry-After`, within the 60 req/min budget; other 4xx failures are permanent and logged with the endpoint and collection context.
 
 3.7 — Hourly profiles: at each UTC hour, synchronize membership, then retrieve all current members using `/api/v2/users`, split into chunks of at most 50 IDs. Each returned user's available statistics for all four game modes are processed.
 

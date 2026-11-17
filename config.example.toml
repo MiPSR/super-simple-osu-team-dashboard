@@ -1,16 +1,23 @@
-# Configuration for the osu! team dashboard.
+# The dashboard's single configuration file.
 #
-# Required:
-#   team_id — osu! team identifier (positive integer). The team's identity,
-#   logo, roster and default game mode are fetched from the osu! API.
+# Copy this file to data/config.toml in the working directory and fill it in.
+# The SQLite database is created beside it (data/team.sqlite).
 #
-# Optional (defaults shown):
-#   rate_divider            = 2        # request budget = 60 / divider per minute
-#   score_poll_base_seconds = 5        # effective score-feed interval = base x divider (10 s by default)
-#   database_path           = "./data/team.sqlite"
-#   port                    = 3000     # web backend port
-#
-# Credentials are read from the environment, never from this file:
-#   OSU_CLIENT_ID / OSU_CLIENT_SECRET (required by the collector)
+# Required keys are validated at startup: a missing or invalid value stops the
+# app with an explicit error. There are no environment variables and no CLI
+# flags.
 
-team_id = 1
+team_id = 1                 # osu! team id (positive integer); the team's
+                            # identity, logo, roster and default game mode
+                            # come from the API
+
+client_id = 1               # osu! OAuth application client id — from
+                            # https://osu.ppy.sh/home/account/edit#oauth
+client_secret = "replace-me"  # osu! OAuth application client secret — keep
+                              # this file out of version control
+
+rate_divider = 2            # optional; request budget = 60 / rate_divider
+                            # per minute (default 2)
+
+# The score-feed base interval is a fixed rule: 5 seconds × rate_divider.
+# The web backend listens on port 3000. Both are not configurable.

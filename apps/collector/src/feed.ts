@@ -5,6 +5,12 @@ import { scoreToInput, beatmapToInput } from "./mapping.ts";
 import type { TeamRoster } from "./roster.ts";
 
 /**
+ * Score-feed base interval in seconds — a fixed rule, not a parameter
+ * (spec 2.4). The effective polling interval is this × rate_divider.
+ */
+export const SCORE_POLL_BASE_SECONDS = 5;
+
+/**
  * Score feed collector (spec 3.2, 3.3, 3.4).
  *
  * Polls GET /scores (no ruleset filter — covers all four modes), processes its
@@ -22,7 +28,6 @@ export class ScoreFeed {
     private readonly client: OsuClient,
     private readonly queries: Queries,
     private readonly roster: TeamRoster,
-    private readonly pollBaseSeconds: number,
     private readonly divider: number,
     private readonly logger: Logger,
     private readonly onScoresChange?: () => void,
@@ -30,7 +35,7 @@ export class ScoreFeed {
 
   /** Effective regular polling interval = base × divider (2.4). */
   get pollIntervalMs(): number {
-    return this.pollBaseSeconds * this.divider * 1000;
+    return SCORE_POLL_BASE_SECONDS * this.divider * 1000;
   }
 
   private static isKept(score: ScoreJson, rosterHas: (id: number) => boolean): boolean {

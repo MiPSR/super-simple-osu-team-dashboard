@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { loadConfig, loadCredentials, resolveConfigPath } from "@osu-team/config";
+import { loadConfig, databasePathFor } from "@osu-team/config";
 import { openDatabase, migrate } from "@osu-team/database";
 import { Queries } from "@osu-team/database";
 import { Scheduler, systemClock } from "./scheduler.ts";
@@ -11,7 +11,7 @@ import { HourlyCollector, startHourlyLoop } from "./hourly.ts";
 import { BeatmapEnricher } from "./enrich.ts";
 import type { Logger } from "./osu.ts";
 
-/** Minimal structured logger; never emits OAuth credentials (8.5). */
+/** Minimal structured logger; never emits credentials (8.5). */
 function createLogger(): Logger {
   return {
     info: (m) => console.log(`[collector] ${m}`),
@@ -20,64 +20,55 @@ function createLogger(): Logger {
   };
 }
 
-export async function main(argv: string[], env: Record<string, string | undefined>): Promise<void> {
+export interface CollectorOptions {
+  /** Test-only override for mock backends; production uses the official endpoints. */
+  apiBase?: string;
+  /** Test-only Bearer token for mock backends. */
+  token?: string;
+}
+
+export async function main(options: CollectorOptions = {}): Promise<void> {
   const logger = createLogger();
 
-  // Validate configuration (8.6) — a missing value aborts startup with an
-  // explicit error (2.6).
-  const configPath = resolveConfigPath(argv, env);
-  const config = await loadConfig(configPath);
-  const credentials = loadCredentials(env);
+  // The single configuration file: data/config.toml (2.6). A missing required
+  // value aborts startup with an explicit error.
+  const config = await loadConfig();
+  const databasePath = databasePathFor(config);
   logger.info(
-    `config ok: team_id=${config.teamId} rate_divider=${config.rateDivider} poll=${config.scorePollBaseSeconds}s (effective ${config.scorePollBaseSeconds * config.rateDivider}s) db=${config.databasePath}`,
+    `config ok: team_id=${config.teamId} rate_divider=${config.rateDivider} db=${databasePath}`,
   );
 
-  mkdirSync(dirname(config.databasePath), { recursive: true });
-  const db = openDatabase({ path: config.databasePath });
+  mkdirSync(dirname(databasePath), { recursive: true });
+  const db = openDatabase({ path: databasePath });
   migrate(db);
   const queries = new Queries(db);
 
   const scheduler = new Scheduler(config.rateDivider, systemClock, (event) => {
     if (event.type === "retry") logger.warn(`scheduler retry (attempt ${event.attempt}) after ${event.backoffMs} ms`);
-    if (event.type === "auth-retry") logger.warn(`auth retry ${event.count}`);
     if (event.type === "permanent-failure") logger.error(`request permanently failed: ${event.detail}`);
     if (event.type === "budget-wait") logger.info(`rate budget reached; waiting ${event.waitMs} ms`);
   });
 
   const client = new OsuClient({
-    clientId: credentials.clientId,
-    clientSecret: credentials.clientSecret,
     scheduler,
     logger,
+    apiBase: options.apiBase,
+    token: options.token,
   });
 
   const roster = new TeamRoster(client, queries, config.teamId, logger);
   roster.loadFromDatabase();
 
-  // Team sync with limited retries at startup (8.6).
-  let synced = false;
-  for (let attempt = 1; attempt <= 3 && !synced; attempt++) {
-    try {
-      await roster.sync();
-      synced = true;
-    } catch (err) {
-      logger.error(`startup team sync attempt ${attempt} failed: ${(err as Error).message}`);
-      if (attempt === 3) {
-        console.error("[collector] FATAL could not synchronize the team; exiting");
-        process.exit(1);
-      }
-      await systemClock.sleep(2_000 * attempt);
-    }
+  // Team synchronization (3.1): one attempt at startup through the shared
+  // scheduler; API-level backoff applies. The hourly loop retries at the next
+  // UTC hour — an API failure never exits the process.
+  try {
+    await roster.sync();
+  } catch (err) {
+    logger.error(`startup team sync failed: ${(err as Error).message}`);
   }
 
-  const feed = new ScoreFeed(
-    client,
-    queries,
-    roster,
-    config.scorePollBaseSeconds,
-    config.rateDivider,
-    logger,
-  );
+  const feed = new ScoreFeed(client, queries, roster, config.rateDivider, logger);
 
   const abort = new AbortController();
   const signal = abort.signal;
@@ -111,5 +102,5 @@ export async function main(argv: string[], env: Record<string, string | undefine
 }
 
 if (import.meta.main) {
-  await main(Bun.argv.slice(2), process.env as Record<string, string | undefined>);
+  await main();
 }

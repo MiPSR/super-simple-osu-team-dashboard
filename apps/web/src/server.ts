@@ -17,7 +17,6 @@ import { buildLeaderboard, buildLivePlays, buildLiveLeaderboard, isoFromLogicalH
 
 export interface WebOptions {
   databasePath: string;
-  port: number;
   publicDir: string;
 }
 

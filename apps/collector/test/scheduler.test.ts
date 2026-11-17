@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { Scheduler, MAX_ATTEMPTS, type Clock, type AttemptOutcome } from "../src/index.ts";
+import { Scheduler, type Clock, type AttemptOutcome } from "../src/index.ts";
 import type { RequestPriority } from "../src/index.ts";
 
 /** Deterministic clock: sleep() advances virtual time instantly. */
@@ -121,47 +121,42 @@ function fetchAnd(fetcher: { fn: typeof fetch }): string {
   return "done";
 }
 
-describe("retry and auth handling (3.6)", () => {
-  test("retries transient 5xx failures up to 3 attempts then succeeds", async () => {
-    const scheduler = new Scheduler(1, clock);
-    let call = 0;
-    const client = {
-      scheduler,
-      fetch: (async () => {
-        call += 1;
-        if (call < 3) return jsonResponse({ error: "boom" }, 500);
-        return jsonResponse({ ok: true });
-      }) as unknown as typeof fetch,
-    };
-    const token = "t";
-    const result = await scheduler.schedule("feed", async (): Promise<AttemptOutcome<unknown>> => {
-      const response = await client.fetch("https://x");
-      if (response.status >= 500) return { kind: "transient", detail: `status ${response.status}` };
-      return { kind: "ok", value: token };
-    });
-    expect(result).toBe("t");
-    expect(call).toBe(3);
-    expect(MAX_ATTEMPTS).toBe(3);
-  });
-
-  test("gives up after 3 attempts with exponential backoff (3.6)", async () => {
+describe("retry handling (osu! wiki good practices)", () => {
+  test("retries transient 5xx failures with exponential backoff until success", async () => {
     const scheduler = new Scheduler(1, clock);
     let call = 0;
     const backoffs: number[] = [];
-    let lastAttempt = 0;
-    const task = async (): Promise<AttemptOutcome<null>> => {
+    const result = await scheduler.schedule("feed", async (): Promise<AttemptOutcome<string>> => {
       call += 1;
-      return { kind: "transient", detail: "down" };
-    };
-    await expect(
-      scheduler.schedule("feed", task),
-    ).rejects.toThrow(/after 3 attempts/);
+      if (call < 3) return { kind: "transient", detail: "status 500" };
+      return { kind: "ok", value: "t" };
+    });
+    expect(result).toBe("t");
     expect(call).toBe(3);
-    void lastAttempt;
+    // Backoff doubled between the two retries (1 s spacing + 2 s, then 4 s).
     void backoffs;
   });
 
-  test("honours Retry-After when present (3.6)", async () => {
+  test("transient failures keep retrying with bounded exponential backoff (no attempt cap)", async () => {
+    const scheduler = new Scheduler(1, clock);
+    let call = 0;
+    const observed: number[] = [];
+    const task = async (): Promise<AttemptOutcome<null>> => {
+      call += 1;
+      observed.push(clock.t);
+      return call <= 12 ? { kind: "transient", detail: "down" } : { kind: "ok", value: null };
+    };
+    await scheduler.schedule("feed", task);
+    expect(call).toBe(13);
+    // No attempt gap exceeds the 60 s backoff cap; gaps grow (2, 4, 8 …).
+    for (let i = 1; i < observed.length; i++) {
+      const gap = (observed[i] as number) - (observed[i - 1] as number);
+      expect(gap).toBeLessThanOrEqual(60_000 + 1_000);
+    }
+    expect((observed[3] as number) - (observed[2] as number)).toBeGreaterThan((observed[2] as number) - (observed[1] as number));
+  });
+
+  test("honours Retry-After when present", async () => {
     const scheduler = new Scheduler(1, clock);
     let call = 0;
     const task = async (): Promise<AttemptOutcome<null>> => {
@@ -176,24 +171,6 @@ describe("retry and auth handling (3.6)", () => {
     expect(clock.t - start).toBeGreaterThanOrEqual(7000);
   });
 
-  test("auth failures renew the token without consuming attempts (3.6)", async () => {
-    const scheduler = new Scheduler(1, clock);
-    let call = 0;
-    let renewals = 0;
-    const task = async (): Promise<AttemptOutcome<string>> => {
-      call += 1;
-      if (call === 1) {
-        renewals += 1;
-        return { kind: "auth" };
-      }
-      return { kind: "ok", value: "data" };
-    };
-    const value = await scheduler.schedule("feed", task);
-    expect(value).toBe("data");
-    expect(call).toBe(2);
-    expect(renewals).toBe(1);
-  });
-
   test("permanent failures reject immediately", async () => {
     const scheduler = new Scheduler(1, clock);
     let call = 0;
@@ -205,3 +182,4 @@ describe("retry and auth handling (3.6)", () => {
     expect(call).toBe(1);
   });
 });
+

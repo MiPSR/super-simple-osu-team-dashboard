@@ -1,23 +1,22 @@
 import { createApp } from "./server.ts";
-import { resolveConfigPath, loadConfig } from "@osu-team/config";
+import { loadConfig, databasePathFor } from "@osu-team/config";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-export async function main(argv: string[], env: Record<string, string | undefined>): Promise<void> {
-  const configPath = resolveConfigPath(argv, env);
-  const config = await loadConfig(configPath);
+/** Web backend port, fixed by the spec (1.6). */
+const PORT = 3000;
+
+export async function main(): Promise<void> {
+  const config = await loadConfig();
+  const databasePath = databasePathFor(config);
   const publicDir = new URL("../public", import.meta.url).pathname;
 
-  mkdirSync(dirname(config.databasePath), { recursive: true });
+  mkdirSync(dirname(databasePath), { recursive: true });
 
-  const { app, events } = createApp({
-    databasePath: config.databasePath,
-    port: config.port,
-    publicDir,
-  });
+  const { app, events } = createApp({ databasePath, publicDir });
 
   const server = Bun.serve({
-    port: config.port,
+    port: PORT,
     fetch: app.fetch,
   });
 
@@ -29,9 +28,9 @@ export async function main(argv: string[], env: Record<string, string | undefine
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  console.log(`[web] serving on http://localhost:${config.port} (db: ${config.databasePath})`);
+  console.log(`[web] serving on http://localhost:${PORT} (db: ${databasePath})`);
 }
 
 if (import.meta.main) {
-  await main(Bun.argv.slice(2), process.env as Record<string, string | undefined>);
+  await main();
 }

@@ -1,68 +1,102 @@
 import { describe, test, expect } from "bun:test";
-import { loadConfigFromString, loadCredentials, resolveConfigPath, ConfigError } from "../src/index.ts";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { validateConfig, databasePathFor, loadConfig, CONFIG_PATH, ConfigError } from "../src/index.ts";
+
+const P = "data/config.toml";
+
+/** Write a TOML file into a fresh temp dir and validate it (Bun parses TOML natively). */
+async function loadTemp(toml: string): Promise<ReturnType<typeof validateConfig>> {
+  const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+  const file = join(dir, "config.toml");
+  writeFileSync(file, toml);
+  const mod = (await import(file)) as { default?: Record<string, unknown> };
+  return validateConfig((mod.default ?? mod) as Record<string, unknown>, P);
+}
 
 describe("config loading (spec section 2)", () => {
-  test("parses a minimal configuration with team_id only", () => {
-    const config = loadConfigFromString("team_id = 123\n", "team.toml");
+  test("parses the three required values; rate_divider defaults to 2", async () => {
+    const config = await loadTemp("team_id = 123\nclient_id = 999\nclient_secret = \"abc\"\n");
     expect(config.teamId).toBe(123);
+    expect(config.clientId).toBe("999");
+    expect(config.clientSecret).toBe("abc");
     expect(config.rateDivider).toBe(2);
-    expect(config.scorePollBaseSeconds).toBe(5);
-    expect(config.databasePath).toBe("./data/team.sqlite");
-    expect(config.port).toBe(3000);
+    expect(config.configPath).toBe(P);
   });
 
-  test("parses every optional value", () => {
-    const toml = `
-      team_id = 7
-      rate_divider = 3
-      score_poll_base_seconds = 10
-      database_path = "/tmp/x.sqlite"
-      port = 8080
-    `;
-    const config = loadConfigFromString(toml, "team.toml");
-    expect(config.rateDivider).toBe(3);
-    expect(config.scorePollBaseSeconds).toBe(10);
-    expect(config.databasePath).toBe("/tmp/x.sqlite");
-    expect(config.port).toBe(8080);
+  test("optional rate_divider is honored", async () => {
+    expect((await loadTemp("team_id = 1\nclient_id = 1\nclient_secret = \"s\"\nrate_divider = 3\n")).rateDivider).toBe(3);
   });
 
-  test("rejects a missing team_id with an explicit error (2.6)", () => {
-    expect(() => loadConfigFromString("rate_divider = 2\n", "team.toml")).toThrow(ConfigError);
+  test.each(["team_id", "client_id", "client_secret"])("missing %s prevents startup with an explicit error", async (key) => {
+    const lines = ["team_id = 123", "client_id = 999", 'client_secret = "abc"'];
+    const text = lines.filter((l) => !l.startsWith(key)).join("\n") + "\n";
+    expect(async () => await loadTemp(text)).toThrow(new RegExp(`missing required value "${key}"`));
   });
 
-  test("rejects a non-positive team_id (2.1)", () => {
-    expect(() => loadConfigFromString("team_id = 0\n", "team.toml")).toThrow(ConfigError);
-    expect(() => loadConfigFromString("team_id = -1\n", "team.toml")).toThrow(ConfigError);
+  test("team_id must be a positive integer", async () => {
+    expect(async () => await loadTemp("team_id = 0\nclient_id = 1\nclient_secret = \"s\"\n")).toThrow(ConfigError);
+    expect(async () => await loadTemp("team_id = -1\nclient_id = 1\nclient_secret = \"s\"\n")).toThrow(ConfigError);
+    expect(async () => await loadTemp("team_id = \"x\"\nclient_id = 1\nclient_secret = \"s\"\n")).toThrow(/integer/);
   });
 
-  test("rejects a non-integer team_id", () => {
-    expect(() => loadConfigFromString('team_id = "abc"\n', "team.toml")).toThrow(ConfigError);
+  test("secrets must be non-empty strings", async () => {
+    expect(async () => await loadTemp("team_id = 1\nclient_id = 1\nclient_secret = \"\"\n")).toThrow(/client_secret/);
+    expect(async () => await loadTemp("team_id = 1\nclient_id = 1\nclient_secret = 5\n")).toThrow(/client_secret/);
   });
 
-  test("rate_divider must be an integer >= 1 (2.3)", () => {
-    expect(() => loadConfigFromString("team_id = 1\nrate_divider = 0\n", "t")).toThrow(ConfigError);
-    expect(() => loadConfigFromString("team_id = 1\nrate_divider = 1.5\n", "t")).toThrow(ConfigError);
+  test("rate_divider must be an integer ≥ 1", async () => {
+    expect(async () => await loadTemp("team_id = 1\nclient_id = 1\nclient_secret = \"s\"\nrate_divider = 0\n")).toThrow(ConfigError);
+    expect(async () => await loadTemp("team_id = 1\nclient_id = 1\nclient_secret = \"s\"\nrate_divider = 1.5\n")).toThrow(ConfigError);
   });
 
-  test("score_poll_base_seconds must be a positive integer (2.4)", () => {
-    expect(() => loadConfigFromString("team_id = 1\nscore_poll_base_seconds = 0\n", "t")).toThrow(ConfigError);
-    expect(() => loadConfigFromString("team_id = 1\nscore_poll_base_seconds = -5\n", "t")).toThrow(ConfigError);
+  test("there is no port or database path key — unknown keys are not configuration", async () => {
+    const config = await loadTemp("team_id = 1\nclient_id = 1\nclient_secret = \"s\"\nport = 8080\ndatabase_path = \"/tmp/x\"\n");
+    expect((config as unknown as Record<string, unknown>).port).toBeUndefined();
+    expect((config as unknown as Record<string, unknown>).database_path).toBeUndefined();
   });
 
-  test("invalid TOML reports the file", () => {
-    expect(() => loadConfigFromString("team_id = = 1", "broken.toml")).toThrow(/broken\.toml/);
+  test("invalid TOML reports the file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+    const file = join(dir, "config.toml");
+    writeFileSync(file, "team_id = = 1");
+    expect(async () => await import(file)).toThrow();
   });
 
-  test("credentials come from the environment only (2.2)", () => {
-    expect(() => loadCredentials({})).toThrow(/OSU_CLIENT_ID/);
-    expect(() => loadCredentials({ OSU_CLIENT_ID: "1" })).toThrow(/OSU_CLIENT_SECRET/);
-    const creds = loadCredentials({ OSU_CLIENT_ID: "1", OSU_CLIENT_SECRET: "s" });
-    expect(creds).toEqual({ clientId: "1", clientSecret: "s" });
+  test("the SQLite file lives in the same data directory as the config", async () => {
+    const config = validateConfig({ team_id: 1, client_id: "a", client_secret: "b" }, "data/config.toml");
+    expect(databasePathFor(config)).toBe("data/team.sqlite");
+    const nested = validateConfig({ team_id: 1, client_id: "a", client_secret: "b" }, "/var/lib/osu-dash/data/config.toml");
+    expect(databasePathFor(nested)).toBe("/var/lib/osu-dash/data/team.sqlite");
   });
 
-  test("config path resolution: --config flag wins over TEAM_CONFIG", () => {
-    expect(resolveConfigPath(["--config", "/a/b.toml"], { TEAM_CONFIG: "/c/d.toml" })).toBe("/a/b.toml");
-    expect(resolveConfigPath([], { TEAM_CONFIG: "/c/d.toml" })).toBe("/c/d.toml");
-    expect(resolveConfigPath([], {})).toBe("./team.toml");
+  test("the fixed config path is data/config.toml — no flags, no env, no override", () => {
+    expect(CONFIG_PATH).toBe("data/config.toml");
+  });
+
+  test("a missing file prevents startup with an explicit error", async () => {
+    const cwd = process.cwd();
+    process.chdir(mkdtempSync(join(tmpdir(), "nocfg-")));
+    try {
+      await expect(loadConfig()).rejects.toThrow(/configuration file not found: data\/config\.toml/);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
+  test("loadConfig reads the file from the working directory", async () => {
+    const cwd = process.cwd();
+    const dir = mkdtempSync(join(tmpdir(), "read-"));
+    mkdirSync(join(dir, "data"), { recursive: true });
+    writeFileSync(join(dir, "data/config.toml"), "team_id = 42\nclient_id = 7\nclient_secret = \"s\"\n");
+    process.chdir(dir);
+    try {
+      const config = await loadConfig();
+      expect(config.teamId).toBe(42);
+      expect(databasePathFor(config)).toBe("data/team.sqlite");
+    } finally {
+      process.chdir(cwd);
+    }
   });
 });

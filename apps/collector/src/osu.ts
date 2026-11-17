@@ -2,11 +2,11 @@ import type { GameMode } from "@osu-team/contracts";
 import type { Scheduler, RequestPriority } from "./scheduler.ts";
 
 /**
- * osu!api v2 client: OAuth2 client-credentials token management plus typed
- * requests routed through the shared sequential scheduler (spec 2.2, 3.5, 3.6).
+ * osu!api v2 client: typed requests routed through the shared sequential
+ * scheduler (spec 3.5, 3.6), authenticated with a Bearer token provided by the
+ * configuration. No token acquisition lives here.
  *
  * Endpoint shapes verified against the osu! api wiki (osu.ppy.sh/docs):
- * - POST /oauth/token (grant_type=client_credentials, scope=public)
  * - GET  /teams/{team}        → TeamExtended (leader + members, flag_url, default_ruleset_id)
  * - GET  /scores?cursor_string= → { scores: Score[], cursor_string } (≤1000, all rulesets
  *   when the `ruleset` parameter is omitted; unchanged cursor means caught up)
@@ -15,20 +15,6 @@ import type { Scheduler, RequestPriority } from "./scheduler.ts";
  */
 
 export const DEFAULT_API_BASE = "https://osu.ppy.sh/api/v2";
-export const DEFAULT_TOKEN_URL = "https://osu.ppy.sh/oauth/token";
-
-/**
- * Base URLs for the osu! api. Only override via the OSU_API_BASE /
- * OSU_TOKEN_URL environment variables for local testing against a mock
- * backend; production always talks to the official endpoints.
- */
-export function resolveApiBase(env?: Record<string, string | undefined>): string {
-  return env?.OSU_API_BASE ?? DEFAULT_API_BASE;
-}
-
-export function resolveTokenUrl(env?: Record<string, string | undefined>): string {
-  return env?.OSU_TOKEN_URL ?? DEFAULT_TOKEN_URL;
-}
 
 export class OsuPermanentError extends Error {}
 
@@ -132,89 +118,32 @@ export function rulesetIdToModeName(id: number): GameMode | null {
 }
 
 export interface OsuClientOptions {
-  clientId: string;
-  clientSecret: string;
   scheduler: Scheduler;
   clock?: { now(): number; sleep(ms: number): Promise<void> };
   fetchFn?: FetchLike;
   logger?: Logger;
-  /** Override for mock backends in tests (defaults to the official endpoint). */
+  /** Test-only override for mock backends; production uses the official endpoints. */
   apiBase?: string;
-  tokenUrl?: string;
-}
-
-interface TokenState {
-  accessToken: string;
-  expiresAtMs: number;
+  /** Bearer token used for every API request. Acquisition is out of scope here. */
+  token?: string;
 }
 
 export class OsuClient {
-  private token: TokenState | null = null;
-  private renewal: Promise<void> | null = null;
   private readonly fetchFn: FetchLike;
   private readonly clock: { now(): number };
   private readonly logger?: Logger;
+  private readonly apiBase: string;
 
   constructor(private readonly options: OsuClientOptions) {
     this.fetchFn = options.fetchFn ?? fetch;
     this.clock = options.clock ?? { now: () => Date.now() };
     this.logger = options.logger;
-    this.apiBase = options.apiBase ?? resolveApiBase(process.env as Record<string, string | undefined>);
-    this.tokenUrl = options.tokenUrl ?? resolveTokenUrl(process.env as Record<string, string | undefined>);
+    // Production always uses the official endpoint; apiBase exists only for test doubles.
+    this.apiBase = options.apiBase ?? DEFAULT_API_BASE;
   }
-
-  private readonly apiBase: string;
-  private readonly tokenUrl: string;
 
   get scheduler(): Scheduler {
     return this.options.scheduler;
-  }
-
-  // ---------------------------------------------------------------- token (2.2)
-
-  private async fetchToken(): Promise<TokenState> {
-    const body = new URLSearchParams({
-      client_id: this.options.clientId,
-      client_secret: this.options.clientSecret,
-      grant_type: "client_credentials",
-      scope: "public",
-    });
-    const response = await this.fetchFn(this.tokenUrl, {
-      method: "POST",
-      headers: { "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
-    if (!response.ok) {
-      throw new Error(`osu! token request failed with status ${response.status}`);
-    }
-    const json = (await response.json()) as { access_token: string; expires_in: number };
-    return {
-      accessToken: json.access_token,
-      expiresAtMs: this.clock.now() + json.expires_in * 1000 - 30_000, // renew 30 s early
-    };
-  }
-
-  private async getToken(forceRenew = false): Promise<string> {
-    if (!forceRenew && this.token && this.clock.now() < this.token.expiresAtMs) {
-      return this.token.accessToken;
-    }
-    if (!this.renewal) {
-      this.renewal = this.fetchToken()
-        .then((token) => {
-          this.token = token;
-        })
-        .finally(() => {
-          this.renewal = null;
-        });
-    }
-    await this.renewal;
-    if (!this.token) throw new Error("token state missing after renewal");
-    return this.token.accessToken;
-  }
-
-  /** Invalidate the cached token (called on 401 responses). */
-  async renewToken(): Promise<void> {
-    await this.getToken(true);
   }
 
   // --------------------------------------------------------------- API (3.5/3.6)
@@ -222,21 +151,15 @@ export class OsuClient {
   /** GET an api/v2 path through the scheduler with retry classification. */
   async api<T>(path: string, opts: { priority: RequestPriority; context: string }): Promise<T> {
     return this.options.scheduler.schedule<T>(opts.priority, async () => {
-      const token = await this.getToken();
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (this.options.token !== undefined) {
+        headers.Authorization = `Bearer ${this.options.token}`;
+      }
       let response: Response;
       try {
-        response = await this.fetchFn(`${this.apiBase}${path}`, {
-          headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-        });
+        response = await this.fetchFn(`${this.apiBase}${path}`, { headers });
       } catch (err) {
         return { kind: "transient", detail: `network error for ${path}: ${(err as Error).message}` };
-      }
-
-      if (response.status === 401) {
-        await this.renewToken().catch((err) => {
-          this.logger?.warn(`token renewal failed: ${(err as Error).message}`);
-        });
-        return { kind: "auth" };
       }
 
       if (response.status === 429 || response.status >= 500) {

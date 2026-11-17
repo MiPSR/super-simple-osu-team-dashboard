@@ -59,19 +59,12 @@ function user(id: number) {
   };
 }
 
-let tokenIssued = 0;
-let cursorHead = "cursor-head-1";
-
 const server = Bun.serve({
   port: PORT,
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === "/oauth/token") {
-      tokenIssued += 1;
-      return Response.json({ access_token: `tok-${tokenIssued}`, token_type: "Bearer", expires_in: 86400 });
-    }
     const auth = request.headers.get("Authorization");
-    if (auth !== "Bearer tok-1") {
+    if (auth !== "Bearer e2e-token") {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
     if (url.pathname === "/api/v2/teams/55") {
@@ -107,7 +100,7 @@ const server = Bun.serve({
           },
           { id: 9002, user_id: 999, beatmap_id: 322, ruleset_id: 0, ended_at: "2026-01-01T09:00:01.000Z", passed: true, pp: null, accuracy: 0.5, total_score: 1, rank: "D", max_combo: 1, mods: [], statistics: {}, type: "score_best" },
         ],
-        cursor_string: cursorHead,
+        cursor_string: "cursor-head-1",
       });
     }
     if (url.pathname === "/api/v2/users") {
@@ -125,25 +118,23 @@ afterAll(() => {
 
 describe("collector end-to-end (8.6)", () => {
   test("runs the full startup pipeline against a mock osu! backend", async () => {
-    mkdirSync(WORK, { recursive: true });
-    const dbPath = `${WORK}/team.sqlite`;
-    const configPath = `${WORK}/team.toml`;
-    await Bun.write(configPath, `team_id = 55\ndatabase_path = "${dbPath}"\nrate_divider = 1\n`);
+    // The app reads data/config.toml relative to its working directory; the
+    // database lives beside it (data/team.sqlite).
+    mkdirSync(`${WORK}/data`, { recursive: true });
+    await Bun.write(
+      `${WORK}/data/config.toml`,
+      "team_id = 55\nclient_id = 1\nclient_secret = \"e2e-secret\"\nrate_divider = 1\n",
+    );
 
     const proc = Bun.spawn({
-      cmd: ["bun", "run", "apps/collector/src/main.ts", "--config", configPath],
-      env: {
-        ...process.env,
-        OSU_CLIENT_ID: "e2e-client",
-        OSU_CLIENT_SECRET: "e2e-secret",
-        OSU_API_BASE: `${BASE}/api/v2`,
-        OSU_TOKEN_URL: TOKEN_URL,
-      },
+      cmd: ["bun", "run", new URL("./e2e-entry.ts", import.meta.url).pathname],
+      cwd: WORK, // the app reads data/config.toml relative to its working directory
       stdout: "pipe",
       stderr: "pipe",
     });
 
     // Wait until the first hourly collection is published (max ~15 s).
+    const dbPath = `${WORK}/data/team.sqlite`;
     let db: SqliteDatabase | null = null;
     let published = false;
     for (let i = 0; i < 150; i++) {

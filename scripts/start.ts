@@ -23,8 +23,8 @@ function spawn(args: string[]): Bun.Subprocess {
   return proc;
 }
 
-const web = spawn([`${root}/apps/web/src/main.ts`, ...process.argv.slice(2)]);
-const collector = spawn([`${root}/apps/collector/src/main.ts`, ...process.argv.slice(2)]);
+const web = spawn([`${root}/apps/web/src/main.ts`]);
+const collector = spawn([`${root}/apps/collector/src/main.ts`]);
 
 const shutdown = () => {
   for (const proc of procs) proc.kill();
